@@ -1,139 +1,152 @@
 
-import { useEffect, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
-import NavBar from "@/components/NavBar";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Payment, paymentService } from "@/services/paymentService";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { CheckCircle, XCircle } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { useEffect, useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import NavBar from '@/components/NavBar';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import type { Student, Class } from '@/types/app';
 
-const Dashboard = () => {
+export default function Dashboard() {
   const { currentUser } = useAuth();
-  const [payments, setPayments] = useState<Payment[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [classes, setClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchPayments = async () => {
-      if (currentUser?.id) {
+    async function loadData() {
+      if (currentUser) {
         try {
-          const parentPayments = await paymentService.getParentPayments(currentUser.id);
-          setPayments(parentPayments);
+          // Load students
+          const { data: studentsData } = await supabase
+            .from('students')
+            .select('*')
+            .eq('parent_id', currentUser.id);
+
+          if (studentsData) {
+            setStudents(studentsData);
+
+            // Get all classes for these students
+            for (const student of studentsData) {
+              const { data: studentClasses } = await supabase
+                .from('student_classes')
+                .select('class_id')
+                .eq('student_id', student.id);
+
+              if (studentClasses && studentClasses.length > 0) {
+                const classIds = studentClasses.map(sc => sc.class_id);
+                
+                const { data: classDetails } = await supabase
+                  .from('classes')
+                  .select('*')
+                  .in('id', classIds);
+
+                if (classDetails) {
+                  setClasses(prev => {
+                    // Remove duplicates when merging classes
+                    const existingIds = new Set(prev.map(c => c.id));
+                    const newClasses = classDetails.filter(c => !existingIds.has(c.id));
+                    return [...prev, ...newClasses];
+                  });
+                }
+              }
+            }
+          }
         } catch (error) {
-          console.error("Error fetching payments:", error);
+          console.error('Error loading dashboard data:', error);
         } finally {
           setLoading(false);
         }
       }
-    };
+    }
 
-    fetchPayments();
+    loadData();
   }, [currentUser]);
 
-  // Calculate statistics
-  const paidCount = payments.filter(p => p.status === "Paid").length;
-  const unpaidCount = payments.filter(p => p.status === "Unpaid").length;
-  const totalPaid = payments.filter(p => p.status === "Paid").reduce((sum, p) => sum + p.amount, 0);
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <NavBar />
+        <div className="container py-10 text-center">
+          <p>Loading your dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen flex flex-col animate-fade-in">
+    <div className="min-h-screen bg-background">
       <NavBar />
-      <div className="container mx-auto p-6 flex-1">
+      <div className="container py-10">
         <h1 className="text-3xl font-bold mb-6">Parent Dashboard</h1>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card className="animate-scale-in">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Total Fees Paid</CardTitle>
+        <div className="grid gap-6 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>My Children</CardTitle>
+              <CardDescription>Students registered under your account</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {loading ? <Skeleton className="h-8 w-24" /> : `₹${totalPaid}`}
-              </div>
+              {students.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Email</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {students.map((student) => (
+                      <TableRow key={student.id}>
+                        <TableCell>{student.first_name} {student.last_name}</TableCell>
+                        <TableCell>{student.email || "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-center py-4">No students registered yet.</p>
+              )}
             </CardContent>
           </Card>
           
-          <Card className="animate-scale-in" style={{animationDelay: "0.1s"}}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Paid Months</CardTitle>
+          <Card>
+            <CardHeader>
+              <CardTitle>Enrolled Classes</CardTitle>
+              <CardDescription>Classes your children are enrolled in</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold flex items-center">
-                {loading ? <Skeleton className="h-8 w-24" /> : (
-                  <>
-                    {paidCount} <CheckCircle className="h-5 w-5 text-green-500 ml-2" />
-                  </>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="animate-scale-in" style={{animationDelay: "0.2s"}}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Unpaid Months</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold flex items-center">
-                {loading ? <Skeleton className="h-8 w-24" /> : (
-                  <>
-                    {unpaidCount} <XCircle className="h-5 w-5 text-red-500 ml-2" />
-                  </>
-                )}
-              </div>
+              {classes.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Description</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {classes.map((cls) => (
+                      <TableRow key={cls.id}>
+                        <TableCell>{cls.name}</TableCell>
+                        <TableCell>{cls.description || "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-center py-4">No classes enrolled yet.</p>
+              )}
             </CardContent>
           </Card>
         </div>
-        
-        <Card>
-          <CardHeader>
-            <CardTitle>Fee Payment History</CardTitle>
-            <CardDescription>
-              View all your tuition fee payments here
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="space-y-3">
-                {[...Array(4)].map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : payments.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Month</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Date</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {payments.map((payment, index) => (
-                    <TableRow key={payment.id} className="table-row-stagger" style={{animationDelay: `${index * 0.1}s`}}>
-                      <TableCell className="font-medium">{payment.month} {payment.year}</TableCell>
-                      <TableCell>₹{payment.amount}</TableCell>
-                      <TableCell>
-                        <Badge variant={payment.status === "Paid" ? "default" : "destructive"}>
-                          {payment.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{payment.date || "—"}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                No payment records found.
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
     </div>
   );
-};
-
-export default Dashboard;
+}

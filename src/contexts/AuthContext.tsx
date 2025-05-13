@@ -1,18 +1,16 @@
+
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
-
-type User = {
-  email: string;
-  isAdmin: boolean;
-  id: string;
-} | null;
+import { supabase } from "@/integrations/supabase/client";
+import type { AppUser } from "@/types/app";
+import type { User, Session } from "@supabase/supabase-js";
 
 type AuthContextType = {
-  currentUser: User;
+  currentUser: AppUser | null;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   loading: boolean;
   loginAttempts: number;
   loginLocked: boolean;
@@ -30,15 +28,109 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<User>(null);
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [loginAttempts, setLoginAttempts] = useState(0);
   const [loginLocked, setLoginLocked] = useState(false);
   const [lockoutTimestamp, setLockoutTimestamp] = useState<number | null>(null);
   const navigate = useNavigate();
 
-  // This is a mock implementation - in reality you would use Supabase auth
-  // Once Supabase is connected, this would be replaced with actual Supabase auth calls
+  // Check for login lockout from local storage
+  useEffect(() => {
+    const storedLockoutTime = localStorage.getItem("lockoutTime");
+
+    if (storedLockoutTime) {
+      const lockoutTime = parseInt(storedLockoutTime);
+      if (lockoutTime > Date.now()) {
+        setLoginLocked(true);
+        setLockoutTimestamp(lockoutTime);
+      } else {
+        localStorage.removeItem("lockoutTime");
+      }
+    }
+    
+    // Load login attempts count
+    const storedAttempts = localStorage.getItem("loginAttempts");
+    if (storedAttempts) {
+      setLoginAttempts(parseInt(storedAttempts));
+    }
+    
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        setSession(session);
+        
+        if (session?.user) {
+          // Get user role to determine if admin
+          const { data: roleData } = await supabase
+            .from('user_roles')
+            .select('is_admin')
+            .eq('user_id', session.user.id)
+            .single();
+            
+          setCurrentUser({
+            id: session.user.id,
+            email: session.user.email || '',
+            isAdmin: roleData?.is_admin || false
+          });
+          
+          // Reset login attempts on successful login
+          setLoginAttempts(0);
+          localStorage.removeItem("loginAttempts");
+        } else {
+          setCurrentUser(null);
+        }
+        
+        setLoading(false);
+      }
+    );
+
+    // Check for existing session
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      setSession(session);
+      
+      if (session?.user) {
+        // Get user role to determine if admin
+        const { data: roleData } = await supabase
+          .from('user_roles')
+          .select('is_admin')
+          .eq('user_id', session.user.id)
+          .single();
+          
+        setCurrentUser({
+          id: session.user.id,
+          email: session.user.email || '',
+          isAdmin: roleData?.is_admin || false
+        });
+      }
+      
+      setLoading(false);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // Check if lockout period has expired
+  useEffect(() => {
+    if (!loginLocked || !lockoutTimestamp) return;
+
+    const checkLockout = setInterval(() => {
+      if (Date.now() > lockoutTimestamp) {
+        setLoginLocked(false);
+        setLockoutTimestamp(null);
+        setLoginAttempts(0);
+        localStorage.removeItem("lockoutTime");
+        localStorage.removeItem("loginAttempts");
+        clearInterval(checkLockout);
+      }
+    }, 10000); // Check every 10 seconds
+
+    return () => clearInterval(checkLockout);
+  }, [loginLocked, lockoutTimestamp]);
+
   const login = async (email: string, password: string) => {
     if (loginLocked) {
       const remainingTime = Math.ceil(
@@ -53,129 +145,108 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      // Mock login - replace with Supabase
-      if (email === "admin@aarefatution.com" && password === "Admin123!") {
-        const user = {
-          email,
-          isAdmin: true,
-          id: "admin-id",
-        };
-        setCurrentUser(user);
-        localStorage.setItem("user", JSON.stringify(user));
-        setLoginAttempts(0);
-        navigate("/admin");
-        return;
-      } else if (email === "parent@example.com" && password === "Parent123!") {
-        const user = {
-          email,
-          isAdmin: false,
-          id: "parent-id",
-        };
-        setCurrentUser(user);
-        localStorage.setItem("user", JSON.stringify(user));
-        setLoginAttempts(0);
-        navigate("/dashboard");
-        return;
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+      
+      if (error) {
+        // Handle failed login
+        const newAttempts = loginAttempts + 1;
+        setLoginAttempts(newAttempts);
+        localStorage.setItem("loginAttempts", newAttempts.toString());
+        
+        // Lock account after 3 failed attempts
+        if (newAttempts >= 3) {
+          const lockoutTime = Date.now() + 10 * 60 * 1000; // 10 minutes
+          setLoginLocked(true);
+          setLockoutTimestamp(lockoutTime);
+          localStorage.setItem("lockoutTime", lockoutTime.toString());
+          
+          toast({
+            variant: "destructive",
+            title: "Account locked",
+            description: "Too many failed attempts. Try again in 10 minutes.",
+          });
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Login failed",
+            description: `Invalid email or password. Attempts remaining: ${3 - newAttempts}`,
+          });
+        }
+        throw error;
       }
 
-      // Failed login
-      const newAttempts = loginAttempts + 1;
-      setLoginAttempts(newAttempts);
-      
-      // Lock account after 3 failed attempts
-      if (newAttempts >= 3) {
-        const lockoutTime = Date.now() + 10 * 60 * 1000; // 10 minutes
-        setLoginLocked(true);
-        setLockoutTimestamp(lockoutTime);
-        localStorage.setItem("lockoutTime", lockoutTime.toString());
-        toast({
-          variant: "destructive",
-          title: "Account locked",
-          description: "Too many failed attempts. Try again in 10 minutes.",
-        });
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Login failed",
-          description: `Invalid email or password. Attempts remaining: ${3 - newAttempts}`,
-        });
+      // Successful login will trigger onAuthStateChange
+      if (data.user) {
+        // Get user role to determine navigation
+        const { data: roleData } = await supabase
+          .from('user_roles')
+          .select('is_admin')
+          .eq('user_id', data.user.id)
+          .single();
+        
+        // Reset login attempts
+        setLoginAttempts(0);
+        localStorage.removeItem("loginAttempts");
+        
+        // Redirect based on user role
+        if (roleData?.is_admin) {
+          navigate('/admin');
+        } else {
+          navigate('/dashboard');
+        }
       }
+      
     } catch (error) {
       console.error("Login error:", error);
-      toast({
-        variant: "destructive",
-        title: "Login error",
-        description: "An unexpected error occurred. Please try again.",
-      });
     }
   };
 
   const register = async (email: string, password: string) => {
     try {
-      // This is a mock implementation - would be replaced with Supabase
-      const newUser = {
+      const { error } = await supabase.auth.signUp({
         email,
-        isAdmin: false,
-        id: `user-${Date.now()}`,
-      };
-      setCurrentUser(newUser);
-      localStorage.setItem("user", JSON.stringify(newUser));
-      navigate("/dashboard");
+        password,
+      });
+      
+      if (error) {
+        toast({
+          variant: "destructive",
+          title: "Registration failed",
+          description: error.message,
+        });
+        throw error;
+      }
+      
+      toast({
+        title: "Registration successful",
+        description: "Please check your email to verify your account",
+      });
+      
+      // Successful registration will also automatically sign in the user
+      // which will trigger onAuthStateChange
+      navigate('/dashboard');
+      
     } catch (error) {
       console.error("Registration error:", error);
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+      navigate('/');
+    } catch (error) {
+      console.error("Logout error:", error);
       toast({
         variant: "destructive",
-        title: "Registration error",
-        description: "An unexpected error occurred. Please try again.",
+        title: "Logout error",
+        description: "An unexpected error occurred during logout.",
       });
     }
   };
-
-  const logout = () => {
-    // Mock logout - would be replaced with Supabase
-    setCurrentUser(null);
-    localStorage.removeItem("user");
-    navigate("/");
-  };
-
-  useEffect(() => {
-    // Check for stored user and lockout status
-    const storedUser = localStorage.getItem("user");
-    const storedLockoutTime = localStorage.getItem("lockoutTime");
-
-    if (storedUser) {
-      setCurrentUser(JSON.parse(storedUser));
-    }
-
-    if (storedLockoutTime) {
-      const lockoutTime = parseInt(storedLockoutTime);
-      if (lockoutTime > Date.now()) {
-        setLoginLocked(true);
-        setLockoutTimestamp(lockoutTime);
-      } else {
-        localStorage.removeItem("lockoutTime");
-      }
-    }
-
-    setLoading(false);
-  }, []);
-
-  // Check if lockout period has expired
-  useEffect(() => {
-    if (!loginLocked || !lockoutTimestamp) return;
-
-    const checkLockout = setInterval(() => {
-      if (Date.now() > lockoutTimestamp) {
-        setLoginLocked(false);
-        setLockoutTimestamp(null);
-        setLoginAttempts(0);
-        localStorage.removeItem("lockoutTime");
-        clearInterval(checkLockout);
-      }
-    }, 10000); // Check every 10 seconds
-
-    return () => clearInterval(checkLockout);
-  }, [loginLocked, lockoutTimestamp]);
 
   const value = {
     currentUser,
