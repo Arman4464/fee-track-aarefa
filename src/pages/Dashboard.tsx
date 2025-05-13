@@ -4,14 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import NavBar from '@/components/NavBar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { ResponsiveTable } from '@/components/ResponsiveTable';
 import type { Student, Class } from '@/types/app';
 
 export default function Dashboard() {
@@ -81,6 +74,18 @@ export default function Dashboard() {
     );
   }
 
+  const studentTableData = students.map(student => ({
+    id: student.id,
+    name: `${student.first_name} ${student.last_name}`,
+    email: student.email || "—"
+  }));
+
+  const classTableData = classes.map(cls => ({
+    id: cls.id,
+    name: cls.name,
+    description: cls.description || "—"
+  }));
+
   return (
     <div className="min-h-screen bg-background">
       <NavBar />
@@ -95,22 +100,11 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               {students.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Email</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {students.map((student) => (
-                      <TableRow key={student.id}>
-                        <TableCell>{student.first_name} {student.last_name}</TableCell>
-                        <TableCell>{student.email || "—"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <ResponsiveTable
+                  headers={['Name', 'Email']}
+                  data={studentTableData}
+                  keyField="id"
+                />
               ) : (
                 <p className="text-center py-4">No students registered yet.</p>
               )}
@@ -124,22 +118,11 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               {classes.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Description</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {classes.map((cls) => (
-                      <TableRow key={cls.id}>
-                        <TableCell>{cls.name}</TableCell>
-                        <TableCell>{cls.description || "—"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <ResponsiveTable
+                  headers={['Name', 'Description']}
+                  data={classTableData}
+                  keyField="id"
+                />
               ) : (
                 <p className="text-center py-4">No classes enrolled yet.</p>
               )}

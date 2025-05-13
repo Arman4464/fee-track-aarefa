@@ -117,3 +117,22 @@
     to { opacity: 1; transform: translateY(0); }
   }
 }
+
+/* Responsive table styles */
+@layer components {
+  .responsive-table-card {
+    @apply bg-card rounded-md border p-4 mb-4 animate-fade-in;
+  }
+  
+  .responsive-table-header {
+    @apply text-xs font-medium text-muted-foreground;
+  }
+  
+  .responsive-table-cell {
+    @apply py-2;
+  }
+  
+  .responsive-table-row-divider {
+    @apply border-b last:border-0;
+  }
+}
