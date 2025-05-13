@@ -1,7 +1,6 @@
-
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useToast } from "@/components/ui/use-toast";
+import { toast } from "@/hooks/use-toast";
 
 type User = {
   email: string;
@@ -36,7 +35,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loginAttempts, setLoginAttempts] = useState(0);
   const [loginLocked, setLoginLocked] = useState(false);
   const [lockoutTimestamp, setLockoutTimestamp] = useState<number | null>(null);
-  const { toast } = useToast();
   const navigate = useNavigate();
 
   // This is a mock implementation - in reality you would use Supabase auth
