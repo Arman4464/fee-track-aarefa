@@ -33,5 +33,8 @@ export default defineConfig(({ mode }) => ({
     },
     sourcemap: false,
     minify: 'terser',
+    chunkSizeWarningLimit: 1000,
+    cssCodeSplit: true,
+    reportCompressedSize: false
   }
 }));
