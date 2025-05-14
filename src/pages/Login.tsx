@@ -92,7 +92,7 @@ const Login = () => {
 
               <Button
                 type="submit"
-                className="w-full btn-hover"
+                className="w-full btn-hover bg-[#805AD5] hover:bg-[#6B46C1]"
                 disabled={loading}
               >
                 {loading ? "Logging in..." : "Login"}
@@ -102,7 +102,7 @@ const Login = () => {
           <CardFooter className="flex flex-col space-y-2">
             <div className="text-sm text-muted-foreground text-center">
               Don't have an account?{" "}
-              <Link to="/register" className="text-primary hover:underline">
+              <Link to="/register" className="text-[#805AD5] hover:underline">
                 Register
               </Link>
             </div>

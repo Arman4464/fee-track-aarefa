@@ -140,7 +140,7 @@ const Register = () => {
 
               <Button
                 type="submit"
-                className="w-full btn-hover"
+                className="w-full btn-hover bg-[#805AD5] hover:bg-[#6B46C1]"
                 disabled={loading}
               >
                 {loading ? "Creating account..." : "Register"}
@@ -150,7 +150,7 @@ const Register = () => {
           <CardFooter>
             <div className="text-sm text-muted-foreground text-center w-full">
               Already have an account?{" "}
-              <Link to="/login" className="text-primary hover:underline">
+              <Link to="/login" className="text-[#805AD5] hover:underline">
                 Login
               </Link>
             </div>

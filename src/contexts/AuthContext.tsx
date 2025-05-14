@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { AppUser } from "@/types/app";
-import type { User, Session } from "@supabase/supabase-js";
+import type { Session } from "@supabase/supabase-js";
 
 type AuthContextType = {
   currentUser: AppUser | null;
@@ -16,6 +16,7 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Export as a named function for HMR compatibility
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
@@ -33,22 +34,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Set up auth state listener
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         setSession(session);
         
         if (session?.user) {
           // Get user role to determine if admin
-          const { data: roleData } = await supabase
+          supabase
             .from('user_roles')
             .select('is_admin')
             .eq('user_id', session.user.id)
-            .single();
-            
-          setCurrentUser({
-            id: session.user.id,
-            email: session.user.email || '',
-            isAdmin: roleData?.is_admin || false
-          });
+            .single()
+            .then(({ data: roleData }) => {
+              setCurrentUser({
+                id: session.user.id,
+                email: session.user.email || '',
+                isAdmin: roleData?.is_admin || false
+              });
+            });
         } else {
           setCurrentUser(null);
         }
@@ -58,22 +60,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
 
     // Check for existing session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       
       if (session?.user) {
         // Get user role to determine if admin
-        const { data: roleData } = await supabase
+        supabase
           .from('user_roles')
           .select('is_admin')
           .eq('user_id', session.user.id)
-          .single();
-          
-        setCurrentUser({
-          id: session.user.id,
-          email: session.user.email || '',
-          isAdmin: roleData?.is_admin || false
-        });
+          .single()
+          .then(({ data: roleData }) => {
+            setCurrentUser({
+              id: session.user.id,
+              email: session.user.email || '',
+              isAdmin: roleData?.is_admin || false
+            });
+          });
       }
       
       setLoading(false);
