@@ -1,40 +1,47 @@
 
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react-swc";
-import path from "path";
-import { componentTagger } from "lovable-tagger";
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
+import { compression } from 'vite-plugin-compression2';
+import { chunkSplitPlugin } from 'vite-plugin-chunk-split';
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => ({
-  server: {
-    host: "::",
-    port: 8080,
-  },
+export default defineConfig({
   plugins: [
     react(),
-    mode === 'development' &&
-    componentTagger(),
-  ].filter(Boolean),
+    compression(),
+    chunkSplitPlugin({
+      strategy: 'default',
+    }),
+  ],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      '@': path.resolve(__dirname, './src'),
     },
   },
   build: {
-    outDir: "dist",
+    outDir: 'dist',
+    chunkSizeWarningLimit: 1000,
+    reportCompressedSize: false,
     rollupOptions: {
       output: {
         manualChunks: {
           react: ['react', 'react-dom'],
-          ui: ['@/components/ui/button', '@/components/ui/form', '@/components/ui/input'],
+          // Specify individual components instead of whole directory
+          ui: [
+            '@/components/ui/button',
+            '@/components/ui/form',
+            '@/components/ui/input',
+            '@/components/ui/card',
+            '@/components/ui/alert',
+            '@/components/ui/label'
+          ],
           router: ['react-router-dom']
         }
       }
-    },
-    sourcemap: false,
-    minify: 'terser',
-    chunkSizeWarningLimit: 1000,
-    cssCodeSplit: true,
-    reportCompressedSize: false
+    }
+  },
+  server: {
+    port: 3000,
   }
-}));
+});

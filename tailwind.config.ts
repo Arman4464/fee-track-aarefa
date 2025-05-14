@@ -64,7 +64,7 @@ export default {
           ring: "hsl(var(--sidebar-ring))",
         },
         aarefaTution: {
-          green: "#38A169",
+          purple: "#805AD5",
           blue: "#3182CE",
           darkBg: "#1A202C",
           darkText: "#E2E8F0",

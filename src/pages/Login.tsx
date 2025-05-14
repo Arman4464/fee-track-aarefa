@@ -15,7 +15,7 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login, loginAttempts, loginLocked, lockoutTimestamp } = useAuth();
+  const { login } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,12 +37,6 @@ const Login = () => {
     }
   };
 
-  // Calculate remaining lockout time
-  let remainingMinutes = 0;
-  if (loginLocked && lockoutTimestamp) {
-    remainingMinutes = Math.ceil((lockoutTimestamp - Date.now()) / 1000 / 60);
-  }
-
   return (
     <div className="min-h-screen flex flex-col animate-fade-in">
       <NavBar />
@@ -63,15 +57,6 @@ const Login = () => {
                 </Alert>
               )}
 
-              {loginLocked && (
-                <Alert variant="destructive" className="animate-fade-in">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    Account locked due to too many failed attempts. Try again in {remainingMinutes} minutes.
-                  </AlertDescription>
-                </Alert>
-              )}
-
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <div className="relative">
@@ -83,7 +68,7 @@ const Login = () => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="pl-10"
-                    disabled={loading || loginLocked}
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -100,21 +85,15 @@ const Login = () => {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="pl-10"
-                    disabled={loading || loginLocked}
+                    disabled={loading}
                   />
                 </div>
               </div>
 
-              {loginAttempts > 0 && !loginLocked && (
-                <div className="text-sm text-muted-foreground">
-                  Failed attempts: {loginAttempts}/3
-                </div>
-              )}
-
               <Button
                 type="submit"
                 className="w-full btn-hover"
-                disabled={loading || loginLocked}
+                disabled={loading}
               >
                 {loading ? "Logging in..." : "Login"}
               </Button>

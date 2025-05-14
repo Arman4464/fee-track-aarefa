@@ -12,9 +12,6 @@ type AuthContextType = {
   register: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
-  loginAttempts: number;
-  loginLocked: boolean;
-  lockoutTimestamp: number | null;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -31,32 +28,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loginAttempts, setLoginAttempts] = useState(0);
-  const [loginLocked, setLoginLocked] = useState(false);
-  const [lockoutTimestamp, setLockoutTimestamp] = useState<number | null>(null);
   const navigate = useNavigate();
 
-  // Check for login lockout from local storage
+  // Set up auth state listener
   useEffect(() => {
-    const storedLockoutTime = localStorage.getItem("lockoutTime");
-
-    if (storedLockoutTime) {
-      const lockoutTime = parseInt(storedLockoutTime);
-      if (lockoutTime > Date.now()) {
-        setLoginLocked(true);
-        setLockoutTimestamp(lockoutTime);
-      } else {
-        localStorage.removeItem("lockoutTime");
-      }
-    }
-    
-    // Load login attempts count
-    const storedAttempts = localStorage.getItem("loginAttempts");
-    if (storedAttempts) {
-      setLoginAttempts(parseInt(storedAttempts));
-    }
-    
-    // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         setSession(session);
@@ -74,10 +49,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             email: session.user.email || '',
             isAdmin: roleData?.is_admin || false
           });
-          
-          // Reset login attempts on successful login
-          setLoginAttempts(0);
-          localStorage.removeItem("loginAttempts");
         } else {
           setCurrentUser(null);
         }
@@ -113,37 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Check if lockout period has expired
-  useEffect(() => {
-    if (!loginLocked || !lockoutTimestamp) return;
-
-    const checkLockout = setInterval(() => {
-      if (Date.now() > lockoutTimestamp) {
-        setLoginLocked(false);
-        setLockoutTimestamp(null);
-        setLoginAttempts(0);
-        localStorage.removeItem("lockoutTime");
-        localStorage.removeItem("loginAttempts");
-        clearInterval(checkLockout);
-      }
-    }, 10000); // Check every 10 seconds
-
-    return () => clearInterval(checkLockout);
-  }, [loginLocked, lockoutTimestamp]);
-
   const login = async (email: string, password: string) => {
-    if (loginLocked) {
-      const remainingTime = Math.ceil(
-        (lockoutTimestamp! - Date.now()) / 1000 / 60
-      );
-      toast({
-        variant: "destructive",
-        title: "Account locked",
-        description: `Too many failed attempts. Try again in ${remainingTime} minutes.`,
-      });
-      return;
-    }
-
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -151,30 +92,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       
       if (error) {
-        // Handle failed login
-        const newAttempts = loginAttempts + 1;
-        setLoginAttempts(newAttempts);
-        localStorage.setItem("loginAttempts", newAttempts.toString());
-        
-        // Lock account after 3 failed attempts
-        if (newAttempts >= 3) {
-          const lockoutTime = Date.now() + 10 * 60 * 1000; // 10 minutes
-          setLoginLocked(true);
-          setLockoutTimestamp(lockoutTime);
-          localStorage.setItem("lockoutTime", lockoutTime.toString());
-          
-          toast({
-            variant: "destructive",
-            title: "Account locked",
-            description: "Too many failed attempts. Try again in 10 minutes.",
-          });
-        } else {
-          toast({
-            variant: "destructive",
-            title: "Login failed",
-            description: `Invalid email or password. Attempts remaining: ${3 - newAttempts}`,
-          });
-        }
+        toast({
+          variant: "destructive",
+          title: "Login failed",
+          description: "Invalid email or password",
+        });
         throw error;
       }
 
@@ -186,10 +108,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .select('is_admin')
           .eq('user_id', data.user.id)
           .single();
-        
-        // Reset login attempts
-        setLoginAttempts(0);
-        localStorage.removeItem("loginAttempts");
         
         // Redirect based on user role
         if (roleData?.is_admin) {
@@ -254,9 +172,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     register,
     logout,
     loading,
-    loginAttempts,
-    loginLocked,
-    lockoutTimestamp,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
