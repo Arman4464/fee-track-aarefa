@@ -9,8 +9,10 @@ export default defineConfig({
     react(),
   ],
   resolve: {
+    extensions: ['.js', '.jsx', '.ts', '.tsx'],
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@components': path.resolve(__dirname, './src/components'),
     },
   },
   build: {
