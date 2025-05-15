@@ -50,6 +50,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { toast } from '@/hooks/use-toast';
 
 export default function Admin() {
   const { currentUser } = useAuth();
@@ -83,43 +84,25 @@ export default function Admin() {
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
 
   useEffect(() => {
-    async function fetchUsers() {
-      try {
-        const { data: userRoles } = await supabase
-          .from('user_roles')
-          .select('user_id, is_admin');
-        
-        if (userRoles) {
-          // For each user, get their email
-          const allEmails: {id: string, email: string}[] = [];
-          
-          for (const role of userRoles) {
-            const { data: auth_users } = await supabase.auth.admin.getUserById(role.user_id);
-            if (auth_users && auth_users.user) {
-              allEmails.push({
-                id: role.user_id,
-                email: auth_users.user.email || `user-${role.user_id.slice(0, 6)}`
-              });
-            }
-          }
-          
-          setRegisteredEmails(allEmails);
-        }
-      } catch (error) {
-        console.error('Error fetching users:', error);
-      }
+    if (users?.length > 0 && !usersLoading) {
+      setRegisteredEmails(users.map(user => ({
+        id: user.id,
+        email: user.email
+      })));
     }
-    
-    if (currentUser?.isAdmin) {
-      fetchUsers();
-    }
-  }, [currentUser]);
+  }, [users, usersLoading]);
 
   const handleInitializePayments = () => {
     if (selectedUserEmail) {
       initializePayments.mutate({ 
         email: selectedUserEmail,
         year
+      });
+    } else {
+      toast({
+        title: "Error",
+        description: "Please select a user email first",
+        variant: "destructive"
       });
     }
   };
@@ -181,11 +164,17 @@ export default function Admin() {
                             <SelectValue placeholder="Select a parent" />
                           </SelectTrigger>
                           <SelectContent>
-                            {registeredEmails.map((user) => (
-                              <SelectItem key={user.id} value={user.id}>
-                                {user.email}
+                            {registeredEmails.length > 0 ? (
+                              registeredEmails.map((user) => (
+                                <SelectItem key={user.id} value={user.id}>
+                                  {user.email}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <SelectItem value="loading" disabled>
+                                {usersLoading ? "Loading emails..." : "No registered emails found"}
                               </SelectItem>
-                            ))}
+                            )}
                           </SelectContent>
                         </Select>
                         
@@ -203,20 +192,26 @@ export default function Admin() {
                               </SheetDescription>
                             </SheetHeader>
                             <div className="py-4">
-                              <div className="rounded-md border">
-                                <div className="grid grid-cols-2 p-2 font-medium bg-muted">
-                                  <div className="px-3 py-2">ID</div>
-                                  <div className="px-3 py-2">Email</div>
+                              {usersLoading ? (
+                                <div className="text-center p-4">Loading...</div>
+                              ) : registeredEmails.length > 0 ? (
+                                <div className="rounded-md border">
+                                  <div className="grid grid-cols-2 p-2 font-medium bg-muted">
+                                    <div className="px-3 py-2">ID</div>
+                                    <div className="px-3 py-2">Email</div>
+                                  </div>
+                                  <div className="divide-y">
+                                    {registeredEmails.map((user) => (
+                                      <div key={user.id} className="grid grid-cols-2 py-2">
+                                        <div className="px-3 py-1.5 truncate">{user.id}</div>
+                                        <div className="px-3 py-1.5">{user.email}</div>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                                <div className="divide-y">
-                                  {registeredEmails.map((user) => (
-                                    <div key={user.id} className="grid grid-cols-2 py-2">
-                                      <div className="px-3 py-1.5 truncate">{user.id}</div>
-                                      <div className="px-3 py-1.5">{user.email}</div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
+                              ) : (
+                                <div className="text-center p-4">No registered emails found</div>
+                              )}
                             </div>
                           </SheetContent>
                         </Sheet>
@@ -327,31 +322,38 @@ export default function Admin() {
                   <CardTitle>Payment Preview</CardTitle>
                   <CardDescription>View and manage payment records for users</CardDescription>
                 </div>
-                {selectedUserEmail && (
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={handleInitializePayments}
-                    disabled={initializePayments.isPending}
-                  >
-                    {initializePayments.isPending ? "Initializing..." : "Initialize Payments"}
-                  </Button>
-                )}
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={handleInitializePayments}
+                  disabled={initializePayments.isPending || !selectedUserEmail}
+                >
+                  {initializePayments.isPending ? "Initializing..." : "Initialize Payments"}
+                </Button>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <FormLabel>Select User</FormLabel>
-                    <Select value={selectedUserEmail || ''} onValueChange={setSelectedUserEmail}>
+                    <Select 
+                      value={selectedUserEmail || ''} 
+                      onValueChange={(val) => setSelectedUserEmail(val)}
+                    >
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select a user to view payments" />
                       </SelectTrigger>
                       <SelectContent>
-                        {users?.map((user: RegisteredUser) => (
-                          <SelectItem key={user.id} value={user.email}>
-                            {user.email}
-                          </SelectItem>
-                        ))}
+                        {usersLoading ? (
+                          <SelectItem value="loading" disabled>Loading users...</SelectItem>
+                        ) : users && users.length > 0 ? (
+                          users.map((user: RegisteredUser) => (
+                            <SelectItem key={user.id} value={user.email}>
+                              {user.email}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="none" disabled>No users found</SelectItem>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>

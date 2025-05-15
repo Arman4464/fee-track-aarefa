@@ -15,51 +15,50 @@ export function useRegisteredUsers() {
   const { data: users, isLoading } = useQuery({
     queryKey: ['registeredUsers'],
     queryFn: async () => {
-      const { data: userRoles, error } = await supabase
-        .from('user_roles')
-        .select('user_id');
-      
-      if (error) {
-        setError(error.message);
-        throw error;
-      }
-      
-      if (!userRoles?.length) {
+      try {
+        // Get user roles first
+        const { data: userRoles, error: rolesError } = await supabase
+          .from('user_roles')
+          .select('user_id');
+        
+        if (rolesError) {
+          setError(rolesError.message);
+          throw rolesError;
+        }
+        
+        if (!userRoles?.length) {
+          return [];
+        }
+        
+        // Get all registered users
+        const registeredUsers: RegisteredUser[] = [];
+        
+        for (const role of userRoles) {
+          // Try to get email from students table using parent_id
+          const { data: students } = await supabase
+            .from('students')
+            .select('email')
+            .eq('parent_id', role.user_id)
+            .limit(1);
+          
+          let email = students && students.length > 0 && students[0].email 
+            ? students[0].email 
+            : `user-${role.user_id.slice(0, 8)}`;
+            
+          registeredUsers.push({
+            id: role.user_id,
+            email: email
+          });
+        }
+        
+        return registeredUsers;
+      } catch (err: any) {
+        console.error('Error fetching registered users:', err);
+        setError(err.message);
         return [];
       }
-      
-      // Get user details from auth.users using admin API
-      // This would require a Supabase edge function in a real app
-      // For now we'll just fetch the students to get the parent emails
-      const { data: students, error: studentsError } = await supabase
-        .from('students')
-        .select('parent_id, email')
-        .order('parent_id');
-      
-      if (studentsError) {
-        setError(studentsError.message);
-        throw studentsError;
-      }
-      
-      // Create a map of parent IDs to emails
-      const parentEmails: Record<string, string> = {};
-      students?.forEach(student => {
-        if (student.parent_id) {
-          // Use student email as parent email if available
-          if (student.email) {
-            parentEmails[student.parent_id] = student.email;
-          }
-        }
-      });
-      
-      // Map user IDs to emails
-      const registeredUsers = userRoles.map(role => ({
-        id: role.user_id,
-        email: parentEmails[role.user_id] || `user-${role.user_id.slice(0, 8)}`
-      }));
-      
-      return registeredUsers;
-    }
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   return {
