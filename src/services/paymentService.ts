@@ -1,137 +1,138 @@
 
-export type Payment = {
-  id: string;
-  parentId: string;
-  parentEmail: string;
-  month: string;
-  year: number;
-  status: "Paid" | "Unpaid";
-  amount: number;
-  date?: string;
+import { supabase } from '@/integrations/supabase/client';
+import type { Payment, PaymentMark } from '@/types/app';
+import { toast } from '@/hooks/use-toast';
+import { generateAcademicYear, getCurrentAcademicYear } from '@/utils/academic-year';
+
+export type PaymentUpdateData = {
+  mark?: PaymentMark;
+  payment_date?: string | null;
 };
 
-// Mock data for payments
-const mockPayments: Payment[] = [
-  {
-    id: "pay-1",
-    parentId: "parent-id",
-    parentEmail: "parent@example.com",
-    month: "January",
-    year: 2025,
-    status: "Paid",
-    amount: 500,
-    date: "2025-01-05"
-  },
-  {
-    id: "pay-2",
-    parentId: "parent-id",
-    parentEmail: "parent@example.com",
-    month: "February",
-    year: 2025,
-    status: "Paid",
-    amount: 500,
-    date: "2025-02-03"
-  },
-  {
-    id: "pay-3",
-    parentId: "parent-id",
-    parentEmail: "parent@example.com",
-    month: "March",
-    year: 2025,
-    status: "Unpaid",
-    amount: 500
-  },
-  {
-    id: "pay-4",
-    parentId: "parent-id",
-    parentEmail: "parent@example.com",
-    month: "April",
-    year: 2025,
-    status: "Unpaid",
-    amount: 500
-  }
-];
-
-// Mock service for payments - would be replaced with Supabase
 export const paymentService = {
-  // Get payments for a specific parent
-  getParentPayments: (parentId: string): Promise<Payment[]> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const payments = mockPayments.filter(payment => payment.parentId === parentId);
-        resolve(payments);
-      }, 500);
-    });
+  // Get payments for a specific user email
+  getPaymentsByEmail: async (userEmail: string): Promise<Payment[]> => {
+    const { data, error } = await supabase
+      .from('payments')
+      .select('*')
+      .eq('user_email', userEmail);
+      
+    if (error) {
+      console.error('Error fetching payments:', error);
+      throw error;
+    }
+    
+    return data || [];
   },
   
   // Get all payments (for admin)
-  getAllPayments: (): Promise<Payment[]> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve([...mockPayments]);
-      }, 500);
-    });
+  getAllPayments: async (): Promise<Payment[]> => {
+    const { data, error } = await supabase
+      .from('payments')
+      .select('*')
+      .order('user_email', { ascending: true })
+      .order('month_year', { ascending: true });
+      
+    if (error) {
+      console.error('Error fetching all payments:', error);
+      throw error;
+    }
+    
+    return data || [];
   },
   
   // Update payment status
-  updatePaymentStatus: (paymentId: string, status: "Paid" | "Unpaid"): Promise<Payment> => {
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        const paymentIndex = mockPayments.findIndex(p => p.id === paymentId);
-        if (paymentIndex === -1) {
-          reject(new Error("Payment not found"));
-          return;
-        }
-        
-        mockPayments[paymentIndex] = {
-          ...mockPayments[paymentIndex],
-          status,
-          date: status === "Paid" ? new Date().toISOString().split('T')[0] : undefined
-        };
-        
-        resolve(mockPayments[paymentIndex]);
-      }, 500);
-    });
+  updatePayment: async (paymentId: string, updates: PaymentUpdateData): Promise<Payment> => {
+    const { data, error } = await supabase
+      .from('payments')
+      .update(updates)
+      .eq('id', paymentId)
+      .select()
+      .single();
+      
+    if (error) {
+      console.error('Error updating payment:', error);
+      throw error;
+    }
+    
+    return data;
   },
   
   // Add new payment
-  addPayment: (payment: Omit<Payment, "id">): Promise<Payment> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const newPayment = {
-          id: `pay-${Date.now()}`,
-          ...payment
-        };
-        mockPayments.push(newPayment);
-        resolve(newPayment);
-      }, 500);
-    });
+  addPayment: async (payment: Omit<Payment, 'id' | 'created_at' | 'updated_at'>): Promise<Payment> => {
+    const { data, error } = await supabase
+      .from('payments')
+      .insert([payment])
+      .select()
+      .single();
+      
+    if (error) {
+      console.error('Error adding payment:', error);
+      throw error;
+    }
+    
+    return data;
   },
   
   // Delete payment
-  deletePayment: (paymentId: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        const index = mockPayments.findIndex(p => p.id === paymentId);
-        if (index === -1) {
-          reject(new Error("Payment not found"));
-          return;
-        }
-        mockPayments.splice(index, 1);
-        resolve();
-      }, 500);
-    });
+  deletePayment: async (paymentId: string): Promise<void> => {
+    const { error } = await supabase
+      .from('payments')
+      .delete()
+      .eq('id', paymentId);
+      
+    if (error) {
+      console.error('Error deleting payment:', error);
+      throw error;
+    }
   },
   
-  // Delete all payments for a parent
-  deleteParentPayments: (parentId: string): Promise<void> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const filteredPayments = mockPayments.filter(p => p.parentId !== parentId);
-        mockPayments.length = 0;
-        mockPayments.push(...filteredPayments);
-        resolve();
-      }, 500);
-    });
+  // Initialize or update payments for a school year for a user
+  initializeAcademicYearPayments: async (userEmail: string, year: number = getCurrentAcademicYear()): Promise<void> => {
+    try {
+      const academicMonths = generateAcademicYear(year);
+      
+      // First check if payments already exist for this user and academic year
+      const { data: existingPayments } = await supabase
+        .from('payments')
+        .select('month_year')
+        .eq('user_email', userEmail)
+        .in('month_year', academicMonths.map(m => m.monthYear));
+      
+      // Create a map of existing month_year entries
+      const existingMonthYearMap = new Set(existingPayments?.map(p => p.month_year) || []);
+      
+      // Only create payments for months that don't already exist
+      const paymentsToCreate = academicMonths
+        .filter(month => !existingMonthYearMap.has(month.monthYear))
+        .map(month => ({
+          user_email: userEmail,
+          month_year: month.monthYear,
+          mark: 'Unpaid' as PaymentMark,
+          payment_date: null
+        }));
+      
+      if (paymentsToCreate.length > 0) {
+        const { error } = await supabase
+          .from('payments')
+          .insert(paymentsToCreate);
+          
+        if (error) {
+          throw error;
+        }
+        
+        toast({
+          title: "Payments initialized",
+          description: `Created ${paymentsToCreate.length} payment records for the academic year`
+        });
+      }
+    } catch (error) {
+      console.error("Error initializing payments:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to initialize payments"
+      });
+    }
   }
 };

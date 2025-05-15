@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import NavBar from '@/components/NavBar';
 import { 
   Card, 
@@ -25,14 +25,24 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { useForm } from 'react-hook-form';
 import { useStudents } from '@/hooks/useStudents';
-import { useClasses } from '@/hooks/useClasses';
-import { useStudentClasses } from '@/hooks/useStudentClasses';
 import { useAuth } from '@/contexts/AuthContext';
-import type { StudentFormData, ClassFormData } from '@/types/app';
+import type { StudentFormData } from '@/types/app';
 import { ResponsiveTable } from '@/components/ResponsiveTable';
+import { supabase } from '@/integrations/supabase/client';
+import { useRegisteredUsers, RegisteredUser } from '@/hooks/useRegisteredUsers';
+import { PaymentsTable } from '@/components/PaymentsTable';
+import { usePayments } from '@/hooks/usePayments';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { getCurrentAcademicYear } from '@/utils/academic-year';
 import {
   Select,
   SelectContent,
@@ -44,10 +54,10 @@ import {
 export default function Admin() {
   const { currentUser } = useAuth();
   const { students, isLoading: studentsLoading, addStudent, deleteStudent } = useStudents();
-  const { classes, isLoading: classesLoading, addClass, deleteClass } = useClasses();
-  const { assignStudentToClass, removeStudentFromClass } = useStudentClasses();
-  const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
-  const [selectedClass, setSelectedClass] = useState<string | null>(null);
+  const { users, isLoading: usersLoading } = useRegisteredUsers();
+  const { initializePayments } = usePayments();
+  const [selectedUserEmail, setSelectedUserEmail] = useState<string | null>(null);
+  const [year] = useState(getCurrentAcademicYear());
 
   // Student form
   const studentForm = useForm<StudentFormData>({
@@ -55,40 +65,62 @@ export default function Admin() {
       first_name: '',
       last_name: '',
       email: '',
+      grade: '',
     },
   });
 
-  // Class form
-  const classForm = useForm<ClassFormData>({
-    defaultValues: {
-      name: '',
-      description: '',
-    },
-  });
-
-  const onStudentSubmit = (data: StudentFormData) => {
-    if (currentUser) {
+  const onStudentSubmit = async (data: StudentFormData) => {
+    if (currentUser && selectedParentId) {
       addStudent.mutate({
         ...data,
-        parent_id: currentUser.id,
+        parent_id: selectedParentId,
       });
       studentForm.reset();
     }
   };
 
-  const onClassSubmit = (data: ClassFormData) => {
-    addClass.mutate(data);
-    classForm.reset();
-  };
+  const [registeredEmails, setRegisteredEmails] = useState<{id: string, email: string}[]>([]);
+  const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
 
-  const handleAssignClass = () => {
-    if (selectedStudent && selectedClass) {
-      assignStudentToClass.mutate({
-        studentId: selectedStudent,
-        classId: selectedClass
+  useEffect(() => {
+    async function fetchUsers() {
+      try {
+        const { data: userRoles } = await supabase
+          .from('user_roles')
+          .select('user_id, is_admin');
+        
+        if (userRoles) {
+          // For each user, get their email
+          const allEmails: {id: string, email: string}[] = [];
+          
+          for (const role of userRoles) {
+            const { data: auth_users } = await supabase.auth.admin.getUserById(role.user_id);
+            if (auth_users && auth_users.user) {
+              allEmails.push({
+                id: role.user_id,
+                email: auth_users.user.email || `user-${role.user_id.slice(0, 6)}`
+              });
+            }
+          }
+          
+          setRegisteredEmails(allEmails);
+        }
+      } catch (error) {
+        console.error('Error fetching users:', error);
+      }
+    }
+    
+    if (currentUser?.isAdmin) {
+      fetchUsers();
+    }
+  }, [currentUser]);
+
+  const handleInitializePayments = () => {
+    if (selectedUserEmail) {
+      initializePayments.mutate({ 
+        email: selectedUserEmail,
+        year
       });
-      setSelectedStudent(null);
-      setSelectedClass(null);
     }
   };
 
@@ -107,27 +139,13 @@ export default function Admin() {
   const studentTableData = students?.map(student => ({
     id: student.id,
     name: `${student.first_name} ${student.last_name}`,
+    grade: student.grade || "—",
     email: student.email || "—",
     actions: (
       <Button 
         variant="destructive" 
         size="sm"
         onClick={() => deleteStudent.mutate(student.id)}
-      >
-        Delete
-      </Button>
-    )
-  })) || [];
-
-  const classTableData = classes?.map(cls => ({
-    id: cls.id,
-    name: cls.name,
-    description: cls.description || "—",
-    actions: (
-      <Button 
-        variant="destructive" 
-        size="sm"
-        onClick={() => deleteClass.mutate(cls.id)}
       >
         Delete
       </Button>
@@ -143,8 +161,7 @@ export default function Admin() {
         <Tabs defaultValue="students" className="space-y-4">
           <TabsList className="w-full sm:w-auto">
             <TabsTrigger value="students" className="flex-1 sm:flex-initial">Students</TabsTrigger>
-            <TabsTrigger value="classes" className="flex-1 sm:flex-initial">Classes</TabsTrigger>
-            <TabsTrigger value="assignments" className="flex-1 sm:flex-initial">Class Assignments</TabsTrigger>
+            <TabsTrigger value="preview" className="flex-1 sm:flex-initial">Payment Preview</TabsTrigger>
           </TabsList>
           
           <TabsContent value="students" className="space-y-4">
@@ -156,6 +173,61 @@ export default function Admin() {
               <CardContent>
                 <Form {...studentForm}>
                   <form onSubmit={studentForm.handleSubmit(onStudentSubmit)} className="space-y-4">
+                    <div className="mb-4">
+                      <FormLabel>Parent Email</FormLabel>
+                      <div className="flex space-x-2 items-center">
+                        <Select value={selectedParentId || ''} onValueChange={setSelectedParentId}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select a parent" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {registeredEmails.map((user) => (
+                              <SelectItem key={user.id} value={user.id}>
+                                {user.email}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        
+                        <Sheet>
+                          <SheetTrigger asChild>
+                            <Button variant="outline" size="sm">
+                              View All Emails
+                            </Button>
+                          </SheetTrigger>
+                          <SheetContent>
+                            <SheetHeader>
+                              <SheetTitle>Registered Users</SheetTitle>
+                              <SheetDescription>
+                                All registered users in the system
+                              </SheetDescription>
+                            </SheetHeader>
+                            <div className="py-4">
+                              <div className="rounded-md border">
+                                <div className="grid grid-cols-2 p-2 font-medium bg-muted">
+                                  <div className="px-3 py-2">ID</div>
+                                  <div className="px-3 py-2">Email</div>
+                                </div>
+                                <div className="divide-y">
+                                  {registeredEmails.map((user) => (
+                                    <div key={user.id} className="grid grid-cols-2 py-2">
+                                      <div className="px-3 py-1.5 truncate">{user.id}</div>
+                                      <div className="px-3 py-1.5">{user.email}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </SheetContent>
+                        </Sheet>
+                      </div>
+                      {!selectedParentId && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Select a parent before adding a student
+                        </p>
+                      )}
+                    </div>
+                    
                     <FormField
                       control={studentForm.control}
                       name="first_name"
@@ -184,6 +256,19 @@ export default function Admin() {
                     />
                     <FormField
                       control={studentForm.control}
+                      name="grade"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Grade</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Grade 5" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={studentForm.control}
                       name="email"
                       render={({ field }) => (
                         <FormItem>
@@ -198,7 +283,13 @@ export default function Admin() {
                         </FormItem>
                       )}
                     />
-                    <Button type="submit" className="w-full">Add Student</Button>
+                    <Button 
+                      type="submit" 
+                      className="w-full" 
+                      disabled={!selectedParentId || addStudent.isPending}
+                    >
+                      {addStudent.isPending ? "Adding..." : "Add Student"}
+                    </Button>
                   </form>
                 </Form>
               </CardContent>
@@ -214,7 +305,7 @@ export default function Admin() {
                   <div className="text-center py-4">Loading students...</div>
                 ) : studentTableData.length > 0 ? (
                   <ResponsiveTable
-                    headers={['Name', 'Email', 'Actions']}
+                    headers={['Name', 'Grade', 'Email', 'Actions']}
                     data={studentTableData}
                     keyField="id"
                     renderCustomCell={(row, key) => {
@@ -229,130 +320,49 @@ export default function Admin() {
             </Card>
           </TabsContent>
           
-          <TabsContent value="classes" className="space-y-4">
+          <TabsContent value="preview" className="space-y-4">
             <Card>
-              <CardHeader>
-                <CardTitle>Create New Class</CardTitle>
-                <CardDescription>Add a new class to the system</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Form {...classForm}>
-                  <form onSubmit={classForm.handleSubmit(onClassSubmit)} className="space-y-4">
-                    <FormField
-                      control={classForm.control}
-                      name="name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Class Name</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Mathematics Grade 5" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={classForm.control}
-                      name="description"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Description (Optional)</FormLabel>
-                          <FormControl>
-                            <Textarea 
-                              placeholder="Class description and details" 
-                              {...field} 
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <Button type="submit" className="w-full">Create Class</Button>
-                  </form>
-                </Form>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader>
-                <CardTitle>Available Classes</CardTitle>
-                <CardDescription>Manage all classes in the system</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {classesLoading ? (
-                  <div className="text-center py-4">Loading classes...</div>
-                ) : classTableData.length > 0 ? (
-                  <ResponsiveTable
-                    headers={['Name', 'Description', 'Actions']}
-                    data={classTableData}
-                    keyField="id"
-                    renderCustomCell={(row, key) => {
-                      if (key === 'actions') return row.actions;
-                      return row[key] || "—";
-                    }}
-                  />
-                ) : (
-                  <div className="text-center py-4">No classes created yet.</div>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <div>
+                  <CardTitle>Payment Preview</CardTitle>
+                  <CardDescription>View and manage payment records for users</CardDescription>
+                </div>
+                {selectedUserEmail && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={handleInitializePayments}
+                    disabled={initializePayments.isPending}
+                  >
+                    {initializePayments.isPending ? "Initializing..." : "Initialize Payments"}
+                  </Button>
                 )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-          
-          <TabsContent value="assignments" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Assign Students to Classes</CardTitle>
-                <CardDescription>Manage student class assignments</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <FormLabel>Select Student</FormLabel>
-                      <Select
-                        value={selectedStudent || ''}
-                        onValueChange={setSelectedStudent}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a student" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {students?.map((student) => (
-                            <SelectItem key={student.id} value={student.id}>
-                              {student.first_name} {student.last_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <FormLabel>Select Class</FormLabel>
-                      <Select
-                        value={selectedClass || ''}
-                        onValueChange={setSelectedClass}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a class" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {classes?.map((cls) => (
-                            <SelectItem key={cls.id} value={cls.id}>
-                              {cls.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <div className="space-y-2">
+                    <FormLabel>Select User</FormLabel>
+                    <Select value={selectedUserEmail || ''} onValueChange={setSelectedUserEmail}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select a user to view payments" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {users?.map((user: RegisteredUser) => (
+                          <SelectItem key={user.id} value={user.email}>
+                            {user.email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   
-                  <Button 
-                    onClick={handleAssignClass}
-                    disabled={!selectedStudent || !selectedClass}
-                    className="w-full"
-                  >
-                    Assign Student to Class
-                  </Button>
+                  {selectedUserEmail ? (
+                    <PaymentsTable userEmail={selectedUserEmail} readOnly={false} />
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      Select a user to view their payment schedule
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

@@ -5,13 +5,18 @@ import { useAuth } from '@/contexts/AuthContext';
 import NavBar from '@/components/NavBar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ResponsiveTable } from '@/components/ResponsiveTable';
-import type { Student, Class } from '@/types/app';
+import { PaymentsTable } from '@/components/PaymentsTable';
+import { usePayments } from '@/hooks/usePayments';
+import { Button } from '@/components/ui/button';
+import { getCurrentAcademicYear } from '@/utils/academic-year';
+import type { Student } from '@/types/app';
 
 export default function Dashboard() {
   const { currentUser } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
-  const [classes, setClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState(true);
+  const { initializePayments } = usePayments(currentUser?.email);
+  const [year] = useState(getCurrentAcademicYear());
 
   useEffect(() => {
     async function loadData() {
@@ -25,32 +30,6 @@ export default function Dashboard() {
 
           if (studentsData) {
             setStudents(studentsData);
-
-            // Get all classes for these students
-            for (const student of studentsData) {
-              const { data: studentClasses } = await supabase
-                .from('student_classes')
-                .select('class_id')
-                .eq('student_id', student.id);
-
-              if (studentClasses && studentClasses.length > 0) {
-                const classIds = studentClasses.map(sc => sc.class_id);
-                
-                const { data: classDetails } = await supabase
-                  .from('classes')
-                  .select('*')
-                  .in('id', classIds);
-
-                if (classDetails) {
-                  setClasses(prev => {
-                    // Remove duplicates when merging classes
-                    const existingIds = new Set(prev.map(c => c.id));
-                    const newClasses = classDetails.filter(c => !existingIds.has(c.id));
-                    return [...prev, ...newClasses];
-                  });
-                }
-              }
-            }
           }
         } catch (error) {
           console.error('Error loading dashboard data:', error);
@@ -62,6 +41,15 @@ export default function Dashboard() {
 
     loadData();
   }, [currentUser]);
+
+  const handleInitializePayments = () => {
+    if (currentUser?.email) {
+      initializePayments.mutate({ 
+        email: currentUser.email,
+        year
+      });
+    }
+  };
 
   if (loading) {
     return (
@@ -77,13 +65,8 @@ export default function Dashboard() {
   const studentTableData = students.map(student => ({
     id: student.id,
     name: `${student.first_name} ${student.last_name}`,
+    grade: student.grade || "—",
     email: student.email || "—"
-  }));
-
-  const classTableData = classes.map(cls => ({
-    id: cls.id,
-    name: cls.name,
-    description: cls.description || "—"
   }));
 
   return (
@@ -101,7 +84,7 @@ export default function Dashboard() {
             <CardContent>
               {students.length > 0 ? (
                 <ResponsiveTable
-                  headers={['Name', 'Email']}
+                  headers={['Name', 'Grade', 'Email']}
                   data={studentTableData}
                   keyField="id"
                 />
@@ -112,19 +95,25 @@ export default function Dashboard() {
           </Card>
           
           <Card>
-            <CardHeader>
-              <CardTitle>Enrolled Classes</CardTitle>
-              <CardDescription>Classes your children are enrolled in</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <div>
+                <CardTitle>Payment Schedule</CardTitle>
+                <CardDescription>School fee payment status</CardDescription>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleInitializePayments}
+                disabled={initializePayments.isPending}
+              >
+                {initializePayments.isPending ? "Initializing..." : "Initialize Payments"}
+              </Button>
             </CardHeader>
             <CardContent>
-              {classes.length > 0 ? (
-                <ResponsiveTable
-                  headers={['Name', 'Description']}
-                  data={classTableData}
-                  keyField="id"
-                />
+              {currentUser?.email ? (
+                <PaymentsTable userEmail={currentUser.email} />
               ) : (
-                <p className="text-center py-4">No classes enrolled yet.</p>
+                <p className="text-center py-4">Cannot load payment information.</p>
               )}
             </CardContent>
           </Card>

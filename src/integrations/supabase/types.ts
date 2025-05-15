@@ -9,71 +9,42 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      classes: {
+      payments: {
         Row: {
           created_at: string
-          description: string | null
           id: string
-          name: string
+          mark: string
+          month_year: string
+          payment_date: string | null
           updated_at: string
+          user_email: string
         }
         Insert: {
           created_at?: string
-          description?: string | null
           id?: string
-          name: string
+          mark?: string
+          month_year: string
+          payment_date?: string | null
           updated_at?: string
+          user_email: string
         }
         Update: {
           created_at?: string
-          description?: string | null
           id?: string
-          name?: string
+          mark?: string
+          month_year?: string
+          payment_date?: string | null
           updated_at?: string
+          user_email?: string
         }
         Relationships: []
-      }
-      student_classes: {
-        Row: {
-          class_id: string
-          created_at: string
-          id: string
-          student_id: string
-        }
-        Insert: {
-          class_id: string
-          created_at?: string
-          id?: string
-          student_id: string
-        }
-        Update: {
-          class_id?: string
-          created_at?: string
-          id?: string
-          student_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "student_classes_class_id_fkey"
-            columns: ["class_id"]
-            isOneToOne: false
-            referencedRelation: "classes"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "student_classes_student_id_fkey"
-            columns: ["student_id"]
-            isOneToOne: false
-            referencedRelation: "students"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       students: {
         Row: {
           created_at: string
           email: string | null
           first_name: string
+          grade: string | null
           id: string
           last_name: string
           parent_id: string
@@ -83,6 +54,7 @@ export type Database = {
           created_at?: string
           email?: string | null
           first_name: string
+          grade?: string | null
           id?: string
           last_name: string
           parent_id: string
@@ -92,6 +64,7 @@ export type Database = {
           created_at?: string
           email?: string | null
           first_name?: string
+          grade?: string | null
           id?: string
           last_name?: string
           parent_id?: string

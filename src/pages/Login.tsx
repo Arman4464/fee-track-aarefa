@@ -106,13 +106,6 @@ const Login = () => {
                 Register
               </Link>
             </div>
-            <div className="text-xs text-muted-foreground text-center">
-              Note: For demo purposes, use:
-              <br />
-              - Admin: admin@aarefatution.com / Admin123!
-              <br />
-              - Parent: parent@example.com / Parent123!
-            </div>
           </CardFooter>
         </Card>
       </div>
