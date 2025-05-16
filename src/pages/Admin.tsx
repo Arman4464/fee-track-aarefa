@@ -1,5 +1,7 @@
+
 import { useState, useEffect } from 'react';
 import NavBar from '@/components/NavBar';
+import NavHeader from '@/components/NavHeader';
 import { 
   Card, 
   CardContent, 
@@ -51,6 +53,12 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export default function Admin() {
   const { currentUser } = useAuth();
@@ -61,6 +69,8 @@ export default function Admin() {
   const [year] = useState(getCurrentAcademicYear());
   const [selectedUserStudents, setSelectedUserStudents] = useState<Student[]>([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
+  const [selectedStudentPayments, setSelectedStudentPayments] = useState<any[]>([]);
+  const [loadingPayments, setLoadingPayments] = useState(false);
 
   // Student form
   const studentForm = useForm<any>({
@@ -99,6 +109,7 @@ export default function Admin() {
     async function fetchStudentsForUser() {
       if (!selectedUserEmail) {
         setSelectedUserStudents([]);
+        setSelectedStudentPayments([]);
         return;
       }
 
@@ -129,6 +140,26 @@ export default function Admin() {
       } finally {
         setLoadingStudents(false);
       }
+
+      // Also fetch payments for this user
+      setLoadingPayments(true);
+      try {
+        const { data: paymentData, error: paymentError } = await supabase
+          .from('payments')
+          .select('month_year, mark, payment_date')
+          .eq('user_email', selectedUserEmail)
+          .order('month_year', { ascending: true });
+          
+        if (paymentError) {
+          console.error('Error fetching payments:', paymentError);
+        } else {
+          setSelectedStudentPayments(paymentData || []);
+        }
+      } catch (err) {
+        console.error('Error fetching payments:', err);
+      } finally {
+        setLoadingPayments(false);
+      }
     }
 
     fetchStudentsForUser();
@@ -153,6 +184,38 @@ export default function Admin() {
     }
   };
 
+  // Update payment mark and date
+  const handleSavePayment = async (month_year: string, mark: string, payment_date: string | null) => {
+    if (!selectedUserEmail) return;
+    
+    try {
+      const { error } = await supabase
+        .from('payments')
+        .update({ mark, payment_date })
+        .eq('user_email', selectedUserEmail)
+        .eq('month_year', month_year);
+        
+      if (error) {
+        console.error('Error saving payment:', error);
+        toast({
+          title: 'Error',
+          description: `Failed to save payment: ${error.message}`,
+          variant: 'destructive'
+        });
+      } else {
+        setSelectedStudentPayments(prev =>
+          prev.map(p => (p.month_year === month_year ? { ...p, mark, payment_date } : p))
+        );
+        toast({
+          title: 'Success',
+          description: `Payment updated for ${month_year}`
+        });
+      }
+    } catch (err) {
+      console.error('Error in handleSavePayment:', err);
+    }
+  };
+
   if (!currentUser?.isAdmin) {
     return (
       <div className="min-h-screen bg-background">
@@ -171,13 +234,19 @@ export default function Admin() {
     grade: student.grade || "—",
     email: student.email || "—",
     actions: (
-      <Button 
-        variant="destructive" 
-        size="sm"
-        onClick={() => deleteStudent.mutate(student.id)}
-      >
-        Delete
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="sm">Actions</Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuItem 
+            className="text-destructive"
+            onClick={() => deleteStudent.mutate(student.id)}
+          >
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     )
   })) || [];
 
@@ -482,12 +551,53 @@ export default function Admin() {
                       ) : (
                         <p className="text-muted-foreground text-sm">No students found for this user</p>
                       )}
+
+                      {/* Payments section */}
+                      <div className="mt-6">
+                        <h3 className="text-lg font-medium mb-3">Payments</h3>
+                        {loadingPayments ? (
+                          <div className="text-center py-4">
+                            <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                            Loading payments...
+                          </div>
+                        ) : selectedStudentPayments.length > 0 ? (
+                          <div className="space-y-3 max-w-2xl">
+                            {selectedStudentPayments.map(payment => (
+                              <div key={payment.month_year} className="grid grid-cols-3 gap-3 items-center p-2 border rounded-md">
+                                <div className="font-medium">{payment.month_year}</div>
+                                <Select
+                                  value={payment.mark}
+                                  onValueChange={(value) => handleSavePayment(payment.month_year, value, payment.payment_date)}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="Paid">Paid</SelectItem>
+                                    <SelectItem value="Unpaid">Unpaid</SelectItem>
+                                    <SelectItem value="Next Month">Next Month</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <Input
+                                  type="date"
+                                  value={payment.payment_date || ''}
+                                  onChange={(e) => handleSavePayment(
+                                    payment.month_year, 
+                                    payment.mark,
+                                    e.target.value || null
+                                  )}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-muted-foreground">No payments found for this user. Click "Initialize Payments" to create the payment schedule.</p>
+                        )}
+                      </div>
                     </div>
                   )}
-                  
-                  {selectedUserEmail ? (
-                    <PaymentsTable userEmail={selectedUserEmail} readOnly={false} />
-                  ) : (
+
+                  {!selectedUserEmail && (
                     <div className="text-center py-8 text-muted-foreground">
                       Select a user to view their payment schedule
                     </div>

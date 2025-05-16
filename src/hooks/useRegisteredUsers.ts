@@ -39,11 +39,11 @@ export function useRegisteredUsers() {
         const registeredUsers: RegisteredUser[] = [];
         
         for (const role of userRoles) {
-          // Use type assertion for the RPC function name
+          // Use proper type assertions to bypass TypeScript limitations with custom RPC functions
           const { data, error: authError } = await supabase.rpc(
-            'get_user_email' as unknown as "is_admin", // Type assertion to bypass TypeScript limitation
+            'get_user_email' as any, // Use any type to bypass TypeScript limitation
             { user_id: role.user_id }
-          ) as unknown as { data: UserEmailResponse | null; error: Error | null };
+          ) as { data: UserEmailResponse | null; error: Error | null };
           
           if (authError) {
             console.error('Error fetching user email:', authError);
