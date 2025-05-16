@@ -35,7 +35,7 @@ export function useRegisteredUsers() {
         
         for (const role of userRoles) {
           // Get email directly from auth.users table via RPC function
-          const { data: authUser, error: authError } = await supabase
+          const { data: userData, error: authError } = await supabase
             .rpc('get_user_email', { user_id: role.user_id });
           
           if (authError) {
@@ -48,11 +48,11 @@ export function useRegisteredUsers() {
             continue;
           }
           
-          // If we successfully got the email
-          if (authUser) {
+          // If we successfully got the email (userData is an array with objects containing email property)
+          if (userData && userData.length > 0) {
             registeredUsers.push({
               id: role.user_id,
-              email: authUser.email || `user-${role.user_id.slice(0, 8)}`
+              email: userData[0].email || `user-${role.user_id.slice(0, 8)}`
             });
           } else {
             // Fallback if no email found
