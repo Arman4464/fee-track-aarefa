@@ -8,6 +8,11 @@ export type RegisteredUser = {
   email: string;
 };
 
+// Define a type for the response from our custom RPC function
+type UserEmailResponse = {
+  email: string;
+}[];
+
 export function useRegisteredUsers() {
   const [error, setError] = useState<string | null>(null);
 
@@ -34,10 +39,12 @@ export function useRegisteredUsers() {
         const registeredUsers: RegisteredUser[] = [];
         
         for (const role of userRoles) {
-          // Get email directly from auth.users table via raw RPC call
-          // We need to use a customized approach since TypeScript doesn't know about our custom function
+          // Use a type assertion to handle our custom RPC function
           const { data: userData, error: authError } = await supabase
-            .rpc('get_user_email', { user_id: role.user_id }) as any;
+            .rpc('get_user_email', { user_id: role.user_id }) as unknown as { 
+              data: UserEmailResponse | null; 
+              error: Error | null;
+            };
           
           if (authError) {
             console.error('Error fetching user email:', authError);
