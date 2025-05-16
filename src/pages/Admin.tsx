@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import NavBar from '@/components/NavBar';
 import { 
@@ -28,7 +27,7 @@ import { Button } from '@/components/ui/button';
 import { useForm } from 'react-hook-form';
 import { useStudents } from '@/hooks/useStudents';
 import { useAuth } from '@/contexts/AuthContext';
-import type { StudentFormData } from '@/types/app';
+import type { Student, StudentWithPayments } from '@/types/app';
 import { ResponsiveTable } from '@/components/ResponsiveTable';
 import { useRegisteredUsers, RegisteredUser } from '@/hooks/useRegisteredUsers';
 import { PaymentsTable } from '@/components/PaymentsTable';
@@ -51,6 +50,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function Admin() {
   const { currentUser } = useAuth();
@@ -59,9 +59,11 @@ export default function Admin() {
   const { initializePayments } = usePayments();
   const [selectedUserEmail, setSelectedUserEmail] = useState<string | null>(null);
   const [year] = useState(getCurrentAcademicYear());
+  const [selectedUserStudents, setSelectedUserStudents] = useState<Student[]>([]);
+  const [loadingStudents, setLoadingStudents] = useState(false);
 
   // Student form
-  const studentForm = useForm<StudentFormData>({
+  const studentForm = useForm<any>({
     defaultValues: {
       first_name: '',
       last_name: '',
@@ -70,7 +72,7 @@ export default function Admin() {
     },
   });
 
-  const onStudentSubmit = async (data: StudentFormData) => {
+  const onStudentSubmit = async (data: any) => {
     if (currentUser && selectedParentId) {
       addStudent.mutate({
         ...data,
@@ -85,13 +87,52 @@ export default function Admin() {
 
   useEffect(() => {
     if (users?.length > 0) {
-      console.log("Setting registered emails:", users);
       setRegisteredEmails(users.map(user => ({
         id: user.id,
         email: user.email
       })));
     }
   }, [users]);
+
+  // Fetch students for the selected user email
+  useEffect(() => {
+    async function fetchStudentsForUser() {
+      if (!selectedUserEmail) {
+        setSelectedUserStudents([]);
+        return;
+      }
+
+      setLoadingStudents(true);
+      try {
+        // Find the user ID for the selected email
+        const userId = registeredEmails.find(user => user.email === selectedUserEmail)?.id;
+        
+        if (userId) {
+          const { data, error } = await supabase
+            .from('students')
+            .select('*')
+            .eq('parent_id', userId);
+            
+          if (error) {
+            console.error('Error fetching students:', error);
+            toast({
+              title: 'Error',
+              description: 'Failed to fetch students for the selected user',
+              variant: 'destructive'
+            });
+          } else {
+            setSelectedUserStudents(data || []);
+          }
+        }
+      } catch (err) {
+        console.error('Error in fetchStudentsForUser:', err);
+      } finally {
+        setLoadingStudents(false);
+      }
+    }
+
+    fetchStudentsForUser();
+  }, [selectedUserEmail, registeredEmails]);
 
   const handleInitializePayments = () => {
     if (selectedUserEmail) {
@@ -416,6 +457,33 @@ export default function Admin() {
                       </SelectContent>
                     </Select>
                   </div>
+                  
+                  {/* Show students for the selected user */}
+                  {selectedUserEmail && (
+                    <div className="mt-6 space-y-2">
+                      <h3 className="text-lg font-medium">Students</h3>
+                      {loadingStudents ? (
+                        <div className="text-center py-4">
+                          <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                          Loading students...
+                        </div>
+                      ) : selectedUserStudents.length > 0 ? (
+                        <div className="space-y-2">
+                          {selectedUserStudents.map(student => (
+                            <div key={student.id} className="p-3 border rounded-md bg-muted/30">
+                              <p className="font-medium">
+                                {student.first_name} {student.last_name}
+                                {student.grade && <span className="ml-2 text-muted-foreground">Grade {student.grade}</span>}
+                              </p>
+                              {student.email && <p className="text-sm text-muted-foreground">{student.email}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-muted-foreground text-sm">No students found for this user</p>
+                      )}
+                    </div>
+                  )}
                   
                   {selectedUserEmail ? (
                     <PaymentsTable userEmail={selectedUserEmail} readOnly={false} />
