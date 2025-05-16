@@ -30,7 +30,6 @@ import { useStudents } from '@/hooks/useStudents';
 import { useAuth } from '@/contexts/AuthContext';
 import type { StudentFormData } from '@/types/app';
 import { ResponsiveTable } from '@/components/ResponsiveTable';
-import { supabase } from '@/integrations/supabase/client';
 import { useRegisteredUsers, RegisteredUser } from '@/hooks/useRegisteredUsers';
 import { PaymentsTable } from '@/components/PaymentsTable';
 import { usePayments } from '@/hooks/usePayments';
@@ -51,11 +50,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from '@/hooks/use-toast';
+import { Loader2 } from 'lucide-react';
 
 export default function Admin() {
   const { currentUser } = useAuth();
   const { students, isLoading: studentsLoading, addStudent, deleteStudent } = useStudents();
-  const { users, isLoading: usersLoading } = useRegisteredUsers();
+  const { users, isLoading: usersLoading, error: usersError } = useRegisteredUsers();
   const { initializePayments } = usePayments();
   const [selectedUserEmail, setSelectedUserEmail] = useState<string | null>(null);
   const [year] = useState(getCurrentAcademicYear());
@@ -84,19 +84,24 @@ export default function Admin() {
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (users?.length > 0 && !usersLoading) {
+    if (users?.length > 0) {
+      console.log("Setting registered emails:", users);
       setRegisteredEmails(users.map(user => ({
         id: user.id,
         email: user.email
       })));
     }
-  }, [users, usersLoading]);
+  }, [users]);
 
   const handleInitializePayments = () => {
     if (selectedUserEmail) {
       initializePayments.mutate({ 
         email: selectedUserEmail,
         year
+      });
+      toast({
+        title: "Initializing payments",
+        description: `Creating payment schedule for ${selectedUserEmail}`,
       });
     } else {
       toast({
@@ -159,20 +164,37 @@ export default function Admin() {
                     <div className="mb-4">
                       <FormLabel>Parent Email</FormLabel>
                       <div className="flex space-x-2 items-center">
-                        <Select value={selectedParentId || ''} onValueChange={setSelectedParentId}>
+                        <Select 
+                          value={selectedParentId || ''} 
+                          onValueChange={setSelectedParentId}
+                          disabled={usersLoading || registeredEmails.length === 0}
+                        >
                           <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select a parent" />
+                            <SelectValue placeholder={
+                              usersLoading 
+                                ? "Loading emails..." 
+                                : registeredEmails.length === 0 
+                                  ? "No registered emails" 
+                                  : "Select a parent"
+                            } />
                           </SelectTrigger>
                           <SelectContent>
-                            {registeredEmails.length > 0 ? (
+                            {usersLoading ? (
+                              <SelectItem value="loading" disabled>
+                                <div className="flex items-center gap-2">
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  Loading emails...
+                                </div>
+                              </SelectItem>
+                            ) : registeredEmails.length > 0 ? (
                               registeredEmails.map((user) => (
                                 <SelectItem key={user.id} value={user.id}>
                                   {user.email}
                                 </SelectItem>
                               ))
                             ) : (
-                              <SelectItem value="loading" disabled>
-                                {usersLoading ? "Loading emails..." : "No registered emails found"}
+                              <SelectItem value="none" disabled>
+                                No registered emails found
                               </SelectItem>
                             )}
                           </SelectContent>
@@ -193,7 +215,14 @@ export default function Admin() {
                             </SheetHeader>
                             <div className="py-4">
                               {usersLoading ? (
-                                <div className="text-center p-4">Loading...</div>
+                                <div className="text-center p-4 flex flex-col items-center justify-center">
+                                  <Loader2 className="h-8 w-8 animate-spin mb-2" />
+                                  Loading users...
+                                </div>
+                              ) : usersError ? (
+                                <div className="text-center p-4 text-red-500">
+                                  Error loading users: {usersError}
+                                </div>
                               ) : registeredEmails.length > 0 ? (
                                 <div className="rounded-md border">
                                   <div className="grid grid-cols-2 p-2 font-medium bg-muted">
@@ -204,7 +233,7 @@ export default function Admin() {
                                     {registeredEmails.map((user) => (
                                       <div key={user.id} className="grid grid-cols-2 py-2">
                                         <div className="px-3 py-1.5 truncate">{user.id}</div>
-                                        <div className="px-3 py-1.5">{user.email}</div>
+                                        <div className="px-3 py-1.5 break-all">{user.email}</div>
                                       </div>
                                     ))}
                                   </div>
@@ -219,6 +248,11 @@ export default function Admin() {
                       {!selectedParentId && (
                         <p className="text-sm text-muted-foreground mt-1">
                           Select a parent before adding a student
+                        </p>
+                      )}
+                      {usersError && (
+                        <p className="text-sm text-red-500 mt-1">
+                          Error loading users: {usersError}
                         </p>
                       )}
                     </div>
@@ -283,7 +317,12 @@ export default function Admin() {
                       className="w-full" 
                       disabled={!selectedParentId || addStudent.isPending}
                     >
-                      {addStudent.isPending ? "Adding..." : "Add Student"}
+                      {addStudent.isPending ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Adding...
+                        </>
+                      ) : "Add Student"}
                     </Button>
                   </form>
                 </Form>
@@ -297,7 +336,10 @@ export default function Admin() {
               </CardHeader>
               <CardContent>
                 {studentsLoading ? (
-                  <div className="text-center py-4">Loading students...</div>
+                  <div className="text-center py-4 flex flex-col items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin mb-2" />
+                    Loading students...
+                  </div>
                 ) : studentTableData.length > 0 ? (
                   <ResponsiveTable
                     headers={['Name', 'Grade', 'Email', 'Actions']}
@@ -328,7 +370,12 @@ export default function Admin() {
                   onClick={handleInitializePayments}
                   disabled={initializePayments.isPending || !selectedUserEmail}
                 >
-                  {initializePayments.isPending ? "Initializing..." : "Initialize Payments"}
+                  {initializePayments.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Initializing...
+                    </>
+                  ) : "Initialize Payments"}
                 </Button>
               </CardHeader>
               <CardContent>
@@ -338,13 +385,25 @@ export default function Admin() {
                     <Select 
                       value={selectedUserEmail || ''} 
                       onValueChange={(val) => setSelectedUserEmail(val)}
+                      disabled={usersLoading || !users || users.length === 0}
                     >
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select a user to view payments" />
+                        <SelectValue placeholder={
+                          usersLoading 
+                            ? "Loading users..." 
+                            : !users || users.length === 0 
+                              ? "No users found" 
+                              : "Select a user to view payments"
+                        } />
                       </SelectTrigger>
                       <SelectContent>
                         {usersLoading ? (
-                          <SelectItem value="loading" disabled>Loading users...</SelectItem>
+                          <SelectItem value="loading" disabled>
+                            <div className="flex items-center gap-2">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Loading users...
+                            </div>
+                          </SelectItem>
                         ) : users && users.length > 0 ? (
                           users.map((user: RegisteredUser) => (
                             <SelectItem key={user.id} value={user.email}>

@@ -11,7 +11,7 @@ export type RegisteredUser = {
 export function useRegisteredUsers() {
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch users from user_roles table
+  // Fetch users from auth.users table via user_roles
   const { data: users, isLoading } = useQuery({
     queryKey: ['registeredUsers'],
     queryFn: async () => {
@@ -34,21 +34,33 @@ export function useRegisteredUsers() {
         const registeredUsers: RegisteredUser[] = [];
         
         for (const role of userRoles) {
-          // Try to get email from students table using parent_id
-          const { data: students } = await supabase
-            .from('students')
-            .select('email')
-            .eq('parent_id', role.user_id)
-            .limit(1);
+          // Get email directly from auth.users table via RPC function
+          const { data: authUser, error: authError } = await supabase
+            .rpc('get_user_email', { user_id: role.user_id });
           
-          let email = students && students.length > 0 && students[0].email 
-            ? students[0].email 
-            : `user-${role.user_id.slice(0, 8)}`;
-            
-          registeredUsers.push({
-            id: role.user_id,
-            email: email
-          });
+          if (authError) {
+            console.error('Error fetching user email:', authError);
+            // Use fallback ID as email if we can't get the actual email
+            registeredUsers.push({
+              id: role.user_id,
+              email: `user-${role.user_id.slice(0, 8)}`
+            });
+            continue;
+          }
+          
+          // If we successfully got the email
+          if (authUser) {
+            registeredUsers.push({
+              id: role.user_id,
+              email: authUser.email || `user-${role.user_id.slice(0, 8)}`
+            });
+          } else {
+            // Fallback if no email found
+            registeredUsers.push({
+              id: role.user_id,
+              email: `user-${role.user_id.slice(0, 8)}`
+            });
+          }
         }
         
         return registeredUsers;
