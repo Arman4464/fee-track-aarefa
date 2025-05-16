@@ -13,6 +13,11 @@ type UserEmailResponse = {
   email: string;
 }[];
 
+// Define a type for the input parameters to the get_user_email function
+type GetUserEmailParams = {
+  user_id: string;
+};
+
 export function useRegisteredUsers() {
   const [error, setError] = useState<string | null>(null);
 
@@ -40,9 +45,9 @@ export function useRegisteredUsers() {
         
         for (const role of userRoles) {
           // Use proper TypeScript handling for our custom RPC function
-          // We need to specify the exact return type using generics
+          // We need to specify both return type and params type using generics
           const { data: userData, error: authError } = await supabase
-            .rpc<UserEmailResponse>('get_user_email', { user_id: role.user_id }, {
+            .rpc<UserEmailResponse, GetUserEmailParams>('get_user_email', { user_id: role.user_id }, {
               count: 'exact'  // This helps TypeScript understand we're getting an array back
             });
           
