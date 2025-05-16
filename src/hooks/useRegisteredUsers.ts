@@ -34,9 +34,10 @@ export function useRegisteredUsers() {
         const registeredUsers: RegisteredUser[] = [];
         
         for (const role of userRoles) {
-          // Get email directly from auth.users table via RPC function
+          // Get email directly from auth.users table via raw RPC call
+          // We need to use a customized approach since TypeScript doesn't know about our custom function
           const { data: userData, error: authError } = await supabase
-            .rpc('get_user_email', { user_id: role.user_id });
+            .rpc('get_user_email', { user_id: role.user_id }) as any;
           
           if (authError) {
             console.error('Error fetching user email:', authError);
@@ -49,7 +50,7 @@ export function useRegisteredUsers() {
           }
           
           // If we successfully got the email (userData is an array with objects containing email property)
-          if (userData && userData.length > 0) {
+          if (userData && Array.isArray(userData) && userData.length > 0) {
             registeredUsers.push({
               id: role.user_id,
               email: userData[0].email || `user-${role.user_id.slice(0, 8)}`
