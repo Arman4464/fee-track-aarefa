@@ -13,11 +13,6 @@ type UserEmailResponse = {
   email: string;
 }[];
 
-// Define a type for the input parameters to the get_user_email function
-type GetUserEmailParams = {
-  user_id: string;
-};
-
 export function useRegisteredUsers() {
   const [error, setError] = useState<string | null>(null);
 
@@ -44,13 +39,12 @@ export function useRegisteredUsers() {
         const registeredUsers: RegisteredUser[] = [];
         
         for (const role of userRoles) {
-          // Use proper TypeScript handling for our custom RPC function
-          // We need to use a type assertion for the RPC function name
-          const { data: userData, error: authError } = await supabase
-            .rpc('get_user_email', { user_id: role.user_id }) as unknown as { 
-              data: UserEmailResponse | null; 
-              error: Error | null;
-            };
+          // Since we're using a custom function that's not in the TypeScript definitions,
+          // we need to use a more generic approach with correct typing
+          const { data, error: authError } = await supabase.rpc(
+            'get_user_email',
+            { user_id: role.user_id }
+          );
           
           if (authError) {
             console.error('Error fetching user email:', authError);
@@ -62,11 +56,11 @@ export function useRegisteredUsers() {
             continue;
           }
           
-          // If we successfully got the email (userData is an array with objects containing email property)
-          if (userData && Array.isArray(userData) && userData.length > 0) {
+          // If we successfully got the email
+          if (data && Array.isArray(data) && data.length > 0) {
             registeredUsers.push({
               id: role.user_id,
-              email: userData[0].email || `user-${role.user_id.slice(0, 8)}`
+              email: data[0].email || `user-${role.user_id.slice(0, 8)}`
             });
           } else {
             // Fallback if no email found
